@@ -107,46 +107,45 @@ async function main() {
     execSync(`ffmpeg -y -loop 1 -i "${INTRO_IMAGE}" -c:v libx264 -t 10 -pix_fmt yuv420p -vf scale=1280:720 "${INTRO_VIDEO}"`);
   }
 
-  // 串接 intro_10s.mp4 + VIDEO_FILE 成 video_with_intro.mp4
-  const VIDEO_WITH_INTRO = 'video_with_intro.mp4';
-  const listFileIntro = 'list_intro.txt';
-  fs.writeFileSync(listFileIntro, `file '${path.resolve(INTRO_VIDEO)}'\nfile '${path.resolve(VIDEO_FILE)}'\n`);
-  execSync(`ffmpeg -y -f concat -safe 0 -i ${listFileIntro} -c copy "${VIDEO_WITH_INTRO}"`);
-  fs.unlinkSync(listFileIntro);
-
-  // 後續流程都用 video_with_intro.mp4 當作影片來源
-  const VIDEO_SOURCE = VIDEO_WITH_INTRO;
-
+  // 計算音樂長度
   console.log('計算音樂與影片長度...');
   const audioLen = getMediaDuration(AUDIO_FILE);
-  const videoLen = getMediaDuration(VIDEO_SOURCE);
 
-  // 計算音樂重複次數
+  // 音樂處理
   const audioRepeat = Math.ceil(TARGET_SECONDS / audioLen);
   const audioConcat = 'audio_long.mp3';
   concatMedia(AUDIO_FILE, audioConcat, audioRepeat);
 
-  // 裁切音樂到2小時
+  // 裁切音樂到目標長度
   const audioFinal = 'audio_2h.mp3';
   trimMedia(audioConcat, audioFinal, TARGET_SECONDS);
   fs.unlinkSync(audioConcat);
 
-  // 計算影片重複次數
-  const videoRepeat = Math.ceil(TARGET_SECONDS / videoLen);
-  const videoConcat = 'video_long.mp4';
-  concatMedia(VIDEO_SOURCE, videoConcat, videoRepeat);
+  // 處理影片主體（扣掉片頭10秒）
+  const REMAINING_SECONDS = TARGET_SECONDS - 10;
+  const videoBodyRepeat = Math.ceil(REMAINING_SECONDS / getMediaDuration(VIDEO_FILE));
+  const videoBodyConcat = 'video_body_long.mp4';
+  concatMedia(VIDEO_FILE, videoBodyConcat, videoBodyRepeat);
 
-  // 裁切影片到2小時
-  const videoFinal = 'video_2h.mp4';
-  trimMedia(videoConcat, videoFinal, TARGET_SECONDS);
-  fs.unlinkSync(videoConcat);
+  // 裁切主體影片到 REMAINING_SECONDS
+  const videoBodyFinal = 'video_body_final.mp4';
+  trimMedia(videoBodyConcat, videoBodyFinal, REMAINING_SECONDS);
+  fs.unlinkSync(videoBodyConcat);
+
+  // 串接 intro_10s.mp4 + video_body_final.mp4 成 video_final.mp4
+  const VIDEO_FINAL = 'video_final.mp4';
+  const listFileFinal = 'list_final.txt';
+  fs.writeFileSync(listFileFinal, `file '${path.resolve(INTRO_VIDEO)}'\nfile '${path.resolve(videoBodyFinal)}'\n`);
+  execSync(`ffmpeg -y -f concat -safe 0 -i ${listFileFinal} -c copy "${VIDEO_FINAL}"`);
+  fs.unlinkSync(listFileFinal);
+  fs.unlinkSync(videoBodyFinal);
 
   // 合成影片與音樂
   console.log('合成影片與音樂...');
-  muxVideoAudio(videoFinal, audioFinal, OUTPUT_VIDEO);
+  muxVideoAudio(VIDEO_FINAL, audioFinal, OUTPUT_VIDEO);
 
   // 清理
-  fs.unlinkSync(videoFinal);
+  fs.unlinkSync(VIDEO_FINAL);
   fs.unlinkSync(audioFinal);
 
   // 產生 YouTube meta
