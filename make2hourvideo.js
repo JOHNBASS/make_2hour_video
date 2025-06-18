@@ -6,13 +6,12 @@ const https = require('https');
 const { execSync } = require('child_process');
 const path = require('path');
 
-const VIDEO_URL = 'https://samplelib.com/mp4/sample-5s.mp4'; // 範例貓咪影片可替換
-const AUDIO_URL = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'; // 範例鋼琴音樂可替換
+const INTRO_IMAGE = 'intro.png';
 const VIDEO_FILE = 'cat_video.mp4';
 const AUDIO_FILE = 'piano_audio.mp3';
-const OUTPUT_VIDEO = 'output_2h.mp4';
+const OUTPUT_VIDEO = 'output_8h.mp4';
 const YOUTUBE_META = 'youtube_meta.txt';
-const TARGET_SECONDS = 2 * 60 * 60; // 2小時
+const TARGET_SECONDS = 8 * 60 * 60; // 8小時
 
 // 下載檔案
 function downloadFile(url, dest) {
@@ -97,13 +96,30 @@ function writeYoutubeMeta() {
 
 // 主流程
 async function main() {
-  console.log('下載範例影片與音樂...');
-  await downloadFile(VIDEO_URL, VIDEO_FILE);
-  await downloadFile(AUDIO_URL, AUDIO_FILE);
+  // console.log('下載範例影片與音樂...');
+  // await downloadFile(VIDEO_URL, VIDEO_FILE);
+  // await downloadFile(AUDIO_URL, AUDIO_FILE);
+
+  // 產生片頭 10 秒 intro_10s.mp4
+  // INTRO_IMAGE 已提升至檔案最上方
+  const INTRO_VIDEO = 'intro_10s.mp4';
+  if (!fs.existsSync(INTRO_VIDEO)) {
+    execSync(`ffmpeg -y -loop 1 -i "${INTRO_IMAGE}" -c:v libx264 -t 10 -pix_fmt yuv420p -vf scale=1280:720 "${INTRO_VIDEO}"`);
+  }
+
+  // 串接 intro_10s.mp4 + VIDEO_FILE 成 video_with_intro.mp4
+  const VIDEO_WITH_INTRO = 'video_with_intro.mp4';
+  const listFileIntro = 'list_intro.txt';
+  fs.writeFileSync(listFileIntro, `file '${path.resolve(INTRO_VIDEO)}'\nfile '${path.resolve(VIDEO_FILE)}'\n`);
+  execSync(`ffmpeg -y -f concat -safe 0 -i ${listFileIntro} -c copy "${VIDEO_WITH_INTRO}"`);
+  fs.unlinkSync(listFileIntro);
+
+  // 後續流程都用 video_with_intro.mp4 當作影片來源
+  const VIDEO_SOURCE = VIDEO_WITH_INTRO;
 
   console.log('計算音樂與影片長度...');
   const audioLen = getMediaDuration(AUDIO_FILE);
-  const videoLen = getMediaDuration(VIDEO_FILE);
+  const videoLen = getMediaDuration(VIDEO_SOURCE);
 
   // 計算音樂重複次數
   const audioRepeat = Math.ceil(TARGET_SECONDS / audioLen);
@@ -118,7 +134,7 @@ async function main() {
   // 計算影片重複次數
   const videoRepeat = Math.ceil(TARGET_SECONDS / videoLen);
   const videoConcat = 'video_long.mp4';
-  concatMedia(VIDEO_FILE, videoConcat, videoRepeat);
+  concatMedia(VIDEO_SOURCE, videoConcat, videoRepeat);
 
   // 裁切影片到2小時
   const videoFinal = 'video_2h.mp4';
